@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inversa - secp256k1</title>
+<style>
+  *{box-sizing:border-box;font-family:Arial,sans-serif}
+  body{background:#0d1117;color:#fff;display:flex;justify-content:center;padding:20px;margin:0}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px;width:100%;max-width:780px}
+  h1{margin:0;text-align:center} p{color:#8b949e;text-align:center}
+  .tabs{display:flex;gap:8px;margin:20px 0}
+  .tabs button{flex:1;padding:12px;border-radius:8px;border:1px solid #30363d;background:#0d1117;color:#fff;cursor:pointer;font-weight:bold}
+  .tabs button.ativo{background:#238636;border-color:#238636}
+  label{display:flex;justify-content:space-between;margin:16px 0 8px;font-weight:bold}
+  label span{font-weight:normal;color:#8b949e;font-size:13px}
+  textarea{width:100%;padding:14px;border-radius:8px;border:1px solid #30363d;background:#0d1117;color:#fff;font-size:14px;min-height:70px;resize:vertical;word-break:break-all}
+  input{width:100%;padding:14px;border-radius:8px;border:1px solid #30363d;background:#0d1117;color:#fff;font-size:14px}
+  .btn{width:100%;margin-top:16px;padding:14px;border:0;border-radius:8px;background:#238636;color:#fff;font-size:16px;font-weight:bold;cursor:pointer}
+  .btn2{background:#1f6feb}
+  .result{margin-top:20px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px;display:none}
+  .result b{color:#58a6ff} .result div{word-break:break-all;margin-bottom:12px;line-height:1.6}
+  .ok{color:#3fb950;font-weight:bold} .erro{color:#f85149;font-weight:bold}
+  .copy{padding:8px 12px;border:0;border-radius:6px;background:#30363d;color:#fff;cursor:pointer;margin-top:6px}
+  code{background:#0d1117;padding:2px 6px;border-radius:6px;color:#58a6ff}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🔄 Inversa - secp256k1</h1>
+  <p>Você cola o número, ele dá a inversa<br><code>y² = x³ + 7 mod p</code></p>
+
+  <div class="tabs">
+    <button id="tabPonto" class="ativo" onclick="mostrar('ponto')">📍 Inversa do Ponto<br><small>2G → G</small></button>
+    <button id="tabMod" onclick="mostrar('mod')">🔢 Inversa Modular<br><small>a⁻¹ mod p</small></button>
+  </div>
+
+  <!-- ABA PONTO -->
+  <div id="abaPonto">
+    <label>X do 2G <span id="countX2"></span></label>
+    <textarea id="inX2">89565891926547004231252920425935692360644145829622209833684329913297188986597</textarea>
+    <label>Y do 2G <span id="countY2"></span></label>
+    <textarea id="inY2">12158399299693830322967808612713398636155367887041628176798871954788371653930</textarea>
+    <button class="btn" onclick="inverterPonto()">Calcular Inversa → Voltar pra G</button>
+    <div id="resPonto" class="result"></div>
+  </div>
+
+  <!-- ABA MODULAR -->
+  <div id="abaMod" style="display:none">
+    <label>Número (a) <span id="countA"></span></label>
+    <textarea id="inA">2</textarea>
+    <label>Módulo (p ou n) <span id="countP"></span></label>
+    <textarea id="inP">115792089237316195423570985008687907852837564279074904382605163141518161494337</textarea>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn2" style="flex:1" onclick="usarP()">Usar p</button>
+      <button class="btn btn2" style="flex:1" onclick="usarN()">Usar n</button>
+    </div>
+    <button class="btn" onclick="inverterMod()">Calcular Inversa Modular</button>
+    <div id="resMod" class="result"></div>
+  </div>
+</div>
+
+<script>
+const P = 115792089237316195423570985008687907853269984665640564039457584007908834671663n;
+const N = 115792089237316195423570985008687907852837564279074904382605163141518161494337n;
+const Gx = 55066263022277343669578718895168534326250603453777594175500187360389116729240n;
+const Gy = 32670510020758816978083085130507043184471273380659243275938904335757337482424n;
+
+const limpo = s => s.replace(/[^0-9-]/g,'');
+function atualizar(id, idCount){
+  const el=document.getElementById(id);
+  document.getElementById(idCount).textContent = limpo(el.value).replace('-','').length + " dígitos";
+}
+["inX2","inY2","inA","inP"].forEach(id=>{
+  const el=document.getElementById(id);
+  const countId = id==="inX2"?"countX2":id==="inY2"?"countY2":id==="inA"?"countA":"countP";
+  el.addEventListener("input",()=>atualizar(id,countId));
+  atualizar(id,countId);
+});
+
+function mostrar(qual){
+  document.getElementById("abaPonto").style.display = qual==='ponto'?'block':'none';
+  document.getElementById("abaMod").style.display = qual==='mod'?'block':'none';
+  document.getElementById("tabPonto").classList.toggle("ativo",qual==='ponto');
+  document.getElementById("tabMod").classList.toggle("ativo",qual==='mod');
+}
+function usarP(){ document.getElementById("inP").value = P.toString(); atualizar("inP","countP"); }
+function usarN(){ document.getElementById("inP").value = N.toString(); atualizar("inP","countP"); }
+
+// Inverso modular com Euclides Estendido (funciona no JS)
+function invMod(a, m){
+  let a0 = ((a % m) + m) % m;
+  let m0 = m, y = 0n, x = 1n;
+  if(m === 1n) return 0n;
+  while(a0 > 1n){
+    let q = a0 / m;
+    let t = m; m = a0 % m; a0 = t;
+    t = y; y = x - q * y; x = t;
+  }
+  if(x < 0n) x += m0;
+  return x;
+}
+
+// Soma de pontos
+function somar(Pt, Qt){
+  if(Pt===null) return Qt;
+  if(Qt===null) return Pt;
+  let [x1,y1]=Pt, [x2,y2]=Qt;
+  if(x1===x2 && (y1+y2)%P===0n) return null;
+  let m;
+  if(x1===x2) m = (3n*x1*x1 % P) * invMod(2n*y1, P) % P;
+  else m = ((y2-y1)%P+P)%P * invMod(((x2-x1)%P+P)%P, P) % P;
+  let x3 = (m*m - x1 - x2) % P; if(x3<0n) x3+=P;
+  let y3 = (m*(x1-x3)-y1) % P; if(y3<0n) y3+=P;
+  return [x3,y3];
+}
+function multiplicar(k, Pt){
+  let R=null, base=Pt;
+  while(k>0n){
+    if(k & 1n) R=somar(R,base);
+    base=somar(base,base);
+    k >>= 1n;
+  }
+  return R;
+}
+
+function inverterPonto(){
+  try{
+    const x2 = BigInt(limpo(document.getElementById("inX2").value));
+    const y2 = BigInt(limpo(document.getElementById("inY2").value));
+    // Prova que está na curva
+    const naCurva = (y2*y2 % P) === ((x2*x2*x2 + 7n) % P);
+    // Inversa de 2 mod n
+    const inv2 = (N + 1n) / 2n;
+    const G = multiplicar(inv2, [x2,y2]);
+    const res=document.getElementById("resPonto");
+    res.style.display="block";
+    if(!G){
+      res.innerHTML=`<div class="erro">❌ Ponto inválido / infinito</div>`;
+      return;
+    }
+    // Confere dobrando de volta
+    const volta = somar(G,G);
+    const bate = volta && volta[0]===x2 && volta[1]===y2;
+    res.innerHTML=`
+      <div><b>Você colou 2G =</b><br>(${x2}, ${y2})<br><small>Na curva? ${naCurva?"✅ Sim":"❌ Não - verifica o Y"}</small></div>
+      <div><b>inv2 = (n+1)/2 =</b><br>${inv2}</div>
+      <div><b>✅ G recuperado:</b><br><b>Gx =</b><br>${G[0]}<br><button class="copy" onclick="navigator.clipboard.writeText('${G[0]}')">Copiar Gx</button><br><br><b>Gy =</b><br>${G[1]}<br><button class="copy" onclick="navigator.clipboard.writeText('${G[1]}')">Copiar Gy</button></div>
+      <div><b>Chave pública comprimida:</b><br>${G[1]%2n===0n?"02":"03"}${G[0].toString(16).padStart(64,'0')}</div>
+      <div class="${bate?'ok':'erro'}">${bate?"✅ Prova: G + G = 2G que você colou":"❌ Não bateu ao dobrar de volta"}</div>
+    `;
+  }catch(e){ alert("Erro: "+e.message); }
+}
+
+function inverterMod(){
+  try{
+    const a = BigInt(limpo(document.getElementById("inA").value));
+    const mod = BigInt(limpo(document.getElementById("inP").value));
+    const inv = invMod(a, mod);
+    const prova = (a * inv) % mod;
+    const res=document.getElementById("resMod");
+    res.style.display="block";
+    res.innerHTML=`
+      <div><b>${a}⁻¹ mod ${mod} =</b><br>${inv}<br><button class="copy" onclick="navigator.clipboard.writeText('${inv}')">Copiar resultado</button></div>
+      <div><b>Prova:</b> ${a} * ${inv} % mod = <b>${prova}</b> ${prova===1n?"✅ = 1, certinho!":"❌"}</div>
+    `;
+  }catch(e){ alert("Erro: "+e.message); }
+}
+</script>
+</body>
+</html>
